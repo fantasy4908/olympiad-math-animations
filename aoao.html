@@ -116,6 +116,27 @@
   .ca-stack sup,.ca-stack sub{font-size:0.52em;font-weight:800;line-height:1;height:0.88em;display:flex;align-items:center;font-style:normal;}
   .ca-stack sup{align-items:flex-start;color:var(--ink);}
   .ca-stack sub{align-items:flex-end;color:var(--ink);}
+
+  /* ===== 动画升级（2026-09-25）：步骤过渡 / 逐项入场 / 进度条 / 撒花 / 减少动态 ===== */
+  @keyframes riseIn{0%{opacity:0;transform:translateY(12px) scale(.97);}100%{opacity:1;transform:none;}}
+  @keyframes confettiFall{0%{opacity:1;transform:translate(0,-10px) rotate(0deg);}100%{opacity:0;transform:translate(var(--dx),var(--dy)) rotate(var(--rr));}}
+  @keyframes barShine{0%{background-position:0 0;}100%{background-position:40px 0;}}
+  .step-cur{animation:riseIn .45s cubic-bezier(.2,.9,.3,1) both;}
+  .step-prev + .step-cur{margin-top:8px;}
+  .step-cur .lane,.step-cur .tile,.step-cur .sdot,.step-cur .block,.step-cur .slot{animation:pop .45s cubic-bezier(.2,1.4,.4,1) both;}
+  .step-prev .formula .rc{opacity:1!important;transform:none!important;animation:none!important;}
+  .step-prev .formula,.step-prev .tip,.step-prev .slot,.step-prev .chip,.step-prev .candy,
+  .step-prev .pile,.step-prev .block,.step-prev .tile,.step-prev .sdot,
+  .step-prev .lane,.step-prev .gap,.step-prev .candyrow,.step-prev .figbox{animation:none!important;opacity:1!important;transform:none!important;}
+  .progbar{height:8px;background:#F1E4CC;border-radius:99px;overflow:hidden;margin:12px 0 2px;}
+  .progbar i{display:block;height:100%;width:0;border-radius:99px;
+    background:linear-gradient(90deg,var(--orange),var(--pink),var(--purple));background-size:40px 100%;
+    transition:width .55s cubic-bezier(.2,.8,.3,1);animation:barShine 1.2s linear infinite;}
+  .cover-card{animation:riseIn .5s cubic-bezier(.2,.9,.3,1) both;}
+  .confetti{position:fixed;inset:0;pointer-events:none;z-index:9999;overflow:hidden;}
+  .confetti span{position:absolute;top:-16px;display:block;width:9px;height:14px;border-radius:2px;
+    animation:confettiFall 1.8s cubic-bezier(.2,.6,.6,1) forwards;}
+  @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;}}
 </style>
 </head>
 <body>
@@ -170,6 +191,7 @@
       <button class="btn replay" id="replayBtn">↻ 重播</button>
     </div>
     <div class="progress" id="progress"></div>
+    <div class="progbar"><i id="progfill"></i></div>
   </div>
   </div>
 </div>
@@ -177,9 +199,45 @@
 <script>
 /* ---------- 基础工具 ---------- */
 function E(t,c,h){const e=document.createElement(t); if(c)e.className=c; if(h!=null)e.innerHTML=h; return e;}
-function formula(X,html){ X.innerHTML+=`<div class="formula">${html}</div>`; }
+/* ---------- 最后一题撒花 ---------- */
+function launchConfetti(){
+  try{
+    if(window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const box=E('div','confetti'); document.body.appendChild(box);
+    const colors=['#FF8C42','#FFC93C','#2EC4B6','#3A86FF','#FF5D8F','#9B5DE5','#4CC38A'];
+    for(let i=0;i<70;i++){
+      const s=document.createElement('span');
+      s.style.left=(Math.random()*100)+'vw';
+      s.style.background=colors[i%colors.length];
+      s.style.setProperty('--dx',(Math.random()*240-120).toFixed(0)+'px');
+      s.style.setProperty('--dy',(window.innerHeight*0.7+Math.random()*200).toFixed(0)+'px');
+      s.style.setProperty('--rr',(Math.random()*720-360).toFixed(0)+'deg');
+      s.style.animationDelay=(Math.random()*0.5).toFixed(2)+'s';
+      if(i%3===0) s.style.borderRadius='50%';
+      box.appendChild(s);
+    }
+    setTimeout(()=>box.remove(),2700);
+  }catch(e){}
+}
+
+
+/* 公式打字机：把文字、数字、运算符各包一个 span，从左到右依次出现（延迟封顶 2.4s） */
+function animFormula(html){
+  const parts = String(html).split(/(<[^>]+>)/);
+  let i = 0;
+  return parts.map(p=>{
+    if(p.startsWith('<')) return p;
+    /* 按中文字组 / 数字算式 / 运算符 / 单个字符 切分 */
+    return p.replace(/[\u4e00-\u9fff（）()]+|[0-9][0-9.\/×÷+\-−=]*|[-−+=×÷/÷]|[^\s]/g, tok=>{
+      i++;
+      return '<span class="rc" style="animation-delay:'+Math.min(i*70,2400)+'ms">'+tok+'</span>';
+    });
+  }).join('');
+}
+
+function formula(X,html){ const d=E('div','formula'); d.innerHTML=animFormula(html); X.appendChild(d); }
 function tip(X,html){ X.innerHTML+=`<div class="tip">${html}</div>`; }
-function pilesX(X,arr,label){let h='<div class="piles">';arr.forEach((v,i)=>{h+=`<div class="pile"><div class="d">${label?label[i]:'第'+(i+1)+'份'}</div><div class="v">${v}</div></div>`;});h+='</div>';X.innerHTML+=h;}
+function pilesX(X,arr,label){let h='<div class="piles">';arr.forEach((v,i)=>{h+=`<div class="pile" style="animation-delay:${i*80}ms"><div class="d">${label?label[i]:'第'+(i+1)+'份'}</div><div class="v">${v}</div></div>`;});h+='</div>';X.innerHTML+=h;}
 function colorOf(p){const i='甲乙丙丁戊己庚辛壬癸'.indexOf(p);return 'c'+(((i<0?0:i)%6)+1);}
 
 /* 排队/选人 槽位 */
@@ -187,6 +245,7 @@ function drawSlots(S,{slots,pool,order,active,label}){
   const wrap=E('div'); wrap.style.cssText='display:flex;gap:9px;flex-wrap:wrap;justify-content:center;';
   for(let i=0;i<slots;i++){
     const lane=E('div','lane');
+    lane.style.animationDelay=(i*70)+'ms';
     lane.appendChild(E('div','pos', label?label[i]:('第'+(i+1)+'位')));
     const slot=E('div','slot'+(order[i]?' filled':''));
     slot.textContent=order[i]?order[i]:(active===i?'选谁?':'？');
@@ -195,7 +254,7 @@ function drawSlots(S,{slots,pool,order,active,label}){
   }
   S.appendChild(wrap);
   const bench=E('div','bench');
-  pool.forEach(p=>{const used=order.includes(p);const d=E('div','chip '+colorOf(p)+(used?' gone':''));d.textContent=p;bench.appendChild(d);});
+  pool.forEach((p,j)=>{const used=order.includes(p);const d=E('div','chip '+colorOf(p)+(used?' gone':''));d.textContent=p;d.style.animationDelay=(j*60)+'ms';bench.appendChild(d);});
   S.appendChild(bench);
 }
 /* 5人固定队列 */
@@ -203,6 +262,7 @@ function drawFive(S,arr,lbl){
   const wrap=E('div'); wrap.style.cssText='display:flex;gap:9px;flex-wrap:wrap;justify-content:center;';
   arr.forEach((v,i)=>{
     const lane=E('div','lane');
+    lane.style.animationDelay=(i*70)+'ms';
     lane.appendChild(E('div','pos', lbl?lbl.split(' ')[i]:('第'+(i+1)+'位')));
     const slot=E('div','slot'+(v&&v!=='?'?' filled':'')); slot.style.width='72px';slot.style.height='72px';
     slot.textContent=v||'？';
@@ -214,8 +274,9 @@ function drawFive(S,arr,lbl){
 /* 数字盒子（数位题） */
 function drawBoxes(S,boxes){
   const row=E('div'); row.style.cssText='display:flex;gap:10px;flex-wrap:wrap;justify-content:center;';
-  boxes.forEach(b=>{
+  boxes.forEach((b,i)=>{
     const s=E('div','slot'+(b.fill?' filled':'')+(b.hi?'':''));
+    s.style.animationDelay=(i*70)+'ms';
     if(b.hi){s.style.borderColor='var(--orange)';s.style.color='var(--orange)';}
     s.style.width='72px';s.style.height='72px';s.textContent=b.t;
     row.appendChild(s);
@@ -227,7 +288,7 @@ function drawCandies(S,n,dividers,emoji,ghostFrom,mini){
   ghostFrom=ghostFrom||n; emoji=emoji||'🍬';
   const row=E('div','candyrow');
   for(let i=0;i<n;i++){
-    const cd=E('span','candy'+(i>=ghostFrom?' ghost':'')); cd.textContent=emoji; row.appendChild(cd);
+    const cd=E('span','candy'+(i>=ghostFrom?' ghost':'')); cd.textContent=emoji; cd.style.animationDelay=(i*45)+'ms'; row.appendChild(cd);
     if(dividers&&dividers.includes(i)) row.appendChild(E('span','gap','│'));
   }
   if(dividers&&dividers.includes(n)) row.appendChild(E('span','gap','│'));
@@ -237,21 +298,21 @@ function drawCandies(S,n,dividers,emoji,ghostFrom,mini){
 /* 字母 */
 function drawLetters(S,letters,hi){
   const row=E('div'); row.style.cssText='display:flex;gap:7px;flex-wrap:wrap;justify-content:center;';
-  letters.forEach((L,i)=>{const t=E('div','tile'+(hi&&hi.includes(i)?' hi':''));t.textContent=L;row.appendChild(t);});
+  letters.forEach((L,i)=>{const t=E('div','tile'+(hi&&hi.includes(i)?' hi':''));t.textContent=L;t.style.animationDelay=(i*60)+'ms';row.appendChild(t);});
   S.appendChild(row);
 }
 /* 相邻块队列 */
 function drawQueue(S,items){
   const row=E('div'); row.style.cssText='display:flex;gap:7px;flex-wrap:wrap;justify-content:center;align-items:center;';
-  items.forEach(it=>{ if(Array.isArray(it)){const b=E('div','block');it.forEach(x=>b.appendChild(E('span','b',x)));row.appendChild(b);}
-    else{const d=E('div','chip');d.style.background='var(--teal)';d.textContent=it;row.appendChild(d);}});
+  items.forEach((it,i)=>{ if(Array.isArray(it)){const b=E('div','block');b.style.animationDelay=(i*70)+'ms';it.forEach(x=>b.appendChild(E('span','b',x)));row.appendChild(b);}
+    else{const d=E('div','chip');d.style.background='var(--teal)';d.textContent=it;d.style.animationDelay=(i*70)+'ms';row.appendChild(d);}});
   S.appendChild(row);
 }
 /* 选人 */
 function drawSelect(S,violin,piano,on){
   const row=E('div','selrow');
-  for(let i=0;i<violin;i++){const d=E('div','sdot v'+(on&&on.includes(i)?' on':''));d.textContent='🎻';row.appendChild(d);}
-  for(let i=0;i<piano;i++){const d=E('div','sdot p'+(on&&on.includes(violin+i)?' on':''));d.textContent='🎹';row.appendChild(d);}
+  for(let i=0;i<violin;i++){const d=E('div','sdot v'+(on&&on.includes(i)?' on':''));d.textContent='🎻';d.style.animationDelay=(i*60)+'ms';row.appendChild(d);}
+  for(let i=0;i<piano;i++){const d=E('div','sdot p'+(on&&on.includes(violin+i)?' on':''));d.textContent='🎹';d.style.animationDelay=((violin+i)*60)+'ms';row.appendChild(d);}
   S.appendChild(row);
 }
 
@@ -291,7 +352,7 @@ const replayBtn=document.getElementById('replayBtn');
 const prevChap=document.getElementById('prevChap');
 const nextChap=document.getElementById('nextChap');
 
-let li=0, pi=0, si=0;
+let li=0, pi=0, si=0, renderToken=0;
 
 function buildLevels(){
   chapTitle.innerHTML=`第 <b>${li+1}</b> / ${LEVELS.length} 章 · <b>${LEVELS[li].name}</b> · 共 ${LEVELS[li].probs.length} 题`;
@@ -307,16 +368,42 @@ function buildProbs(){
   });
 }
 function render(){
+  const myToken = ++renderToken;
   const P=LEVELS[li].probs[pi];
   storyEl.innerHTML=P.story;
   const step=P.steps[si];
   bubbleEl.innerHTML=step.say;
+  bubbleEl.style.animation='none'; void bubbleEl.offsetHeight; bubbleEl.style.animation='';
   canvasEl.innerHTML=''; extraEl.innerHTML='';
-  (step.draw||[]).forEach(a=>runDraw(a,canvasEl,extraEl));
+  /* 累积渲染：之前所有步骤的图保留显示（无动画），当前步骤逐步动画出现 */
+  for(let s=0;s<si;s++){
+    const prevDraws=P.steps[s].draw||[];
+    if(!prevDraws.length) continue;
+    const w=E('div','step-prev'), wX=E('div','step-prev');
+    prevDraws.forEach(d=>runDraw(d,w,wX));
+    canvasEl.appendChild(w);
+    if(wX.children.length) extraEl.appendChild(wX);
+  }
+  /* 当前步骤：逐步动画渲染 */
+  const cur=E('div','step-cur'), curX=E('div','step-cur');
+  canvasEl.appendChild(cur); extraEl.appendChild(curX);
+  const draws=step.draw||[];
+  let idx=0;
+  function nextDraw(){
+    if(myToken!==renderToken) return;
+    if(idx>=draws.length) return;
+    runDraw(draws[idx],cur,curX); idx++;
+    if(idx<draws.length) setTimeout(nextDraw,850);
+  }
+  nextDraw();
   document.getElementById('progress').textContent=`第 ${si+1} / ${P.steps.length} 步`;
+  const fill=document.getElementById('progfill'); if(fill) fill.style.width=((si+1)/P.steps.length*100)+'%';
+  if(si===P.steps.length-1) launchConfetti();
   prevBtn.disabled=si===0;
   nextBtn.disabled=si===P.steps.length-1;
   nextBtn.textContent=si===P.steps.length-1?'讲完啦 🎉':'下一步 →';
+  /* 滚动到当前步骤 */
+  setTimeout(()=>{cur.scrollIntoView({behavior:'smooth',block:'nearest'});},200);
 }
 
 prevBtn.onclick=()=>{ if(si>0){si--;render();} };
@@ -332,6 +419,7 @@ function buildCover(){
   LEVELS.forEach((L,i)=>{
     const c=E('button','cover-card');
     c.innerHTML=`<div class="ic">${ICONS[i]||'📘'}</div><div class="no">第 ${i+1} 章</div><div class="nm">${L.name}</div><div class="cnt">${L.probs.length} 题</div>`;
+    c.style.animationDelay=(i*55)+'ms';
     c.onclick=()=>enterChapter(i);
     coverGrid.appendChild(c);
   });
